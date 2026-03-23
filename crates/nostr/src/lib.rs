@@ -4,7 +4,7 @@
 
 //! Rust implementation of the Nostr protocol.
 
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)] // Relaxed from forbid to allow SecretKey::Drop zeroize (volatile write)
 #![cfg_attr(test, allow(missing_docs))]
 #![cfg_attr(not(test), warn(missing_docs))]
 #![warn(rustdoc::bare_urls)]
