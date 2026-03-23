@@ -171,6 +171,14 @@ impl<'de> Deserialize<'de> for SecretKey {
 
 impl Drop for SecretKey {
     fn drop(&mut self) {
-        self.inner.non_secure_erase();
+        // Use zeroize for guaranteed volatile write — non_secure_erase may be
+        // optimized away by the compiler as a dead store (the value is being dropped).
+        // zeroize uses core::ptr::write_volatile which the compiler cannot eliminate.
+        use zeroize::Zeroize;
+        #[allow(unsafe_code)]
+        unsafe {
+            let ptr = &mut self.inner as *mut secp256k1::SecretKey as *mut [u8; 32];
+            (*ptr).zeroize();
+        }
     }
 }
