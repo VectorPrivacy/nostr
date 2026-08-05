@@ -169,12 +169,24 @@ impl<'de> Deserialize<'de> for SecretKey {
     }
 }
 
+// The Drop below reinterprets `secp256k1::SecretKey` as its raw bytes. That type is
+// `repr(Rust)`, so offset-0 is guaranteed only by it being a single-field newtype over
+// `[u8; 32]`. Catch a layout change (an added field) at compile time rather than by
+// silently zeroizing the wrong memory.
+const _: () = assert!(
+    core::mem::size_of::<secp256k1::SecretKey>() == SecretKey::LEN,
+    "secp256k1::SecretKey is no longer a bare [u8; 32] newtype — revisit SecretKey::drop"
+);
+
 impl Drop for SecretKey {
     fn drop(&mut self) {
         // Use zeroize for guaranteed volatile write — non_secure_erase may be
         // optimized away by the compiler as a dead store (the value is being dropped).
         // zeroize uses core::ptr::write_volatile which the compiler cannot eliminate.
         use zeroize::Zeroize;
+        // SAFETY: `secp256k1::SecretKey` is a single-field newtype over `[u8; 32]`
+        // (asserted above), so it has that field at offset 0, no padding, and the
+        // same size and alignment. Writing zeroes through it leaves a valid value.
         #[allow(unsafe_code)]
         unsafe {
             let ptr = &mut self.inner as *mut secp256k1::SecretKey as *mut [u8; Self::LEN];
