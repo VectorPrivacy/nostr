@@ -60,7 +60,7 @@ nip06 = ["dep:bip39"]
 nip44 = ["dep:base64", "dep:chacha20"]
 nip46 = ["nip04", "nip44"]
 nip47 = ["nip04", "nip44"]
-nip49 = ["dep:chacha20poly1305", "dep:scrypt", "dep:unicode-normalization", "dep:zeroize"]
+nip49 = ["dep:chacha20poly1305", "dep:scrypt", "dep:unicode-normalization"]
 nip59 = ["nip44"]
 nip60 = ["nip44"]
 nip98 = ["dep:base64"]
@@ -84,7 +84,7 @@ serde_json.workspace = true
 unicode-normalization = { version = "0.1", default-features = false, optional = true }
 universal-time.workspace = true
 url = { version = "2.5", default-features = false, features = ["serde"] }
-zeroize = { version = "1.9", default-features = false, features = ["alloc"], optional = true }
+zeroize = { version = "1.9", default-features = false, features = ["alloc"] }
 
 [dev-dependencies]
 reqwest = { workspace = true, features = ["rustls-tls"] }
