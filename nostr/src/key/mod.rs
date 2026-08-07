@@ -154,7 +154,7 @@ impl Keys {
     pub fn generate_with_rng<C, R>(secp: &Secp256k1<C>, rng: &mut R) -> Self
     where
         C: Signing,
-        R: Rng,
+        R: Rng + CryptoRng,
     {
         let secret_key: SecretKey = SecretKey::generate_with_rng(rng);
         Self::new_with_ctx(secp, secret_key)

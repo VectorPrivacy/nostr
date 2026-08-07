@@ -8,12 +8,12 @@ use alloc::string::String;
 use core::ops::{Deref, DerefMut};
 use core::str::FromStr;
 
-#[cfg(feature = "rand")]
-use rand::Rng;
 #[cfg(all(feature = "std", feature = "os-rng"))]
 use rand::rand_core::UnwrapErr;
 #[cfg(all(feature = "std", feature = "os-rng"))]
 use rand::rngs::SysRng;
+#[cfg(feature = "rand")]
+use rand::{CryptoRng, Rng};
 use serde::{Deserialize, Deserializer};
 
 use crate::error::{Error, ErrorKind};
@@ -99,12 +99,12 @@ impl SecretKey {
     #[cfg(feature = "rand")]
     pub fn generate_with_rng<R>(rng: &mut R) -> Self
     where
-        R: Rng,
+        R: Rng + CryptoRng,
     {
         let mut data: [u8; Self::LEN] = util::random_32_bytes(rng);
 
         loop {
-            match secp256k1::SecretKey::from_slice(&data) {
+            match secp256k1::SecretKey::from_byte_array(&data) {
                 Ok(secret_key) => return Self { inner: secret_key },
                 Err(_) => data = util::random_32_bytes(rng),
             }

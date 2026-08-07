@@ -14,7 +14,7 @@ use core::panic::PanicInfo;
 use alloc_cortex_m::CortexMHeap;
 use cortex_m_rt::entry;
 use cortex_m_semihosting::{debug, hprintln};
-use rand::TryRng;
+use rand::{TryRng, TryCryptoRng};
 use secp256k1::Secp256k1;
 use nostr::key::{Keys, SecretKey};
 use nostr::nips::nip19::{FromBech32, ToBech32};
@@ -46,6 +46,8 @@ impl TryRng for FakeRng {
         Ok(())
     }
 }
+
+impl TryCryptoRng for FakeRng {}
 
 
 #[entry]

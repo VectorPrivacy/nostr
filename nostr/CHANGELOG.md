@@ -57,6 +57,10 @@
 
 ## v0.45.1 - 2026/08/07
 
+### Breaking changes
+
+- Require `CryptoRng` trait for secret key generation (https://github.com/nostrdevkit/nostr/pull/1437)
+
 ### Fixed
 
 - The `Display` implementations of `NostrConnectMessage` redact the sensitive data (https://github.com/nostrdevkit/nostr/pull/1432)
