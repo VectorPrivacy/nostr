@@ -49,6 +49,10 @@
 
 - Optimize `RelayUrl` parsing (https://github.com/nostrdevkit/nostr/pull/1451)
 
+### Security
+
+- Enforce max length for relay URLs in `RelayUrl::parse` (https://github.com/nostrdevkit/nostr/pull/1451)
+
 ## v0.45.2 - 2026/08/16
 
 ### Fixed

@@ -16,6 +16,8 @@ pub use url::*;
 
 use crate::error::{Error, ErrorKind};
 
+const MAX_RELAY_URL_LEN: usize = 1024; // 1kB (decrease it?)
+
 /// Relay URL scheme
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum RelayUrlScheme {
@@ -100,6 +102,13 @@ impl RelayUrl {
     /// Parse relay URL
     #[inline]
     pub fn parse(url: &str) -> Result<Self, Error> {
+        if url.len() > MAX_RELAY_URL_LEN {
+            return Err(Error::with_static_message(
+                ErrorKind::Invalid,
+                "relay URL too long",
+            ));
+        }
+
         // Check if "://" appears more than once in the URL.
         // Instead of using "count", we use the "next", to avoid iterating over the entire string.
         let mut matches = url.matches("://");
@@ -356,6 +365,18 @@ mod tests {
         assert_eq!(
             RelayUrl::parse("wss://test://test://test://").unwrap_err(),
             Error::with_static_message(ErrorKind::Invalid, "multiple scheme separators")
+        );
+    }
+
+    #[test]
+    fn test_relay_url_too_big() {
+        let url = format!("wss://relay.example.com/{}", "a".repeat(MAX_RELAY_URL_LEN));
+
+        assert!(url.len() > MAX_RELAY_URL_LEN);
+
+        assert_eq!(
+            RelayUrl::parse(&url).unwrap_err(),
+            Error::with_static_message(ErrorKind::Invalid, "relay URL too long")
         );
     }
 
