@@ -2019,6 +2019,44 @@ mod tests {
         forged_event
     }
 
+    fn with_bad_signature(event: Event) -> Event {
+        let mut sig = event.sig.to_bytes();
+        sig[10] ^= 1;
+        let mut event = event;
+        event.sig = Signature::from_slice(&sig).unwrap();
+        assert!(event.verify_id() && event.verify().is_err());
+        event
+    }
+
+    #[tokio::test]
+    async fn test_gift_wrap_signature_is_not_verified_but_its_id_is() {
+        let relay = Relay::new(RelayUrl::parse("wss://relay.example.com").unwrap());
+        let wrap = EventBuilder::new(Kind::GiftWrap, "sealed")
+            .finalize(&Keys::generate())
+            .unwrap();
+        let state = &relay.inner.state;
+        assert!(
+            state
+                .verify_and_cache(&with_bad_signature(wrap.clone()))
+                .await
+                .is_ok()
+        );
+
+        let mut retimed = wrap;
+        retimed.created_at = Timestamp::from_secs(retimed.created_at.as_secs() - 1);
+        assert!(state.verify_and_cache(&retimed).await.is_err());
+
+        let note = EventBuilder::new(Kind::TextNote, "signed")
+            .finalize(&Keys::generate())
+            .unwrap();
+        assert!(
+            state
+                .verify_and_cache(&with_bad_signature(note))
+                .await
+                .is_err()
+        );
+    }
+
     #[tokio::test]
     async fn test_forged_event_with_cached_id_is_rejected_by_verification_cache() {
         let relay = Relay::new(RelayUrl::parse("wss://relay.example.com").unwrap());

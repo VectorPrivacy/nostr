@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use lru::LruCache;
 use nostr::error::{Error, ErrorKind};
-use nostr::event::{Event, EventId};
+use nostr::event::{Event, EventId, Kind};
 use nostr_database::NostrDatabase;
 use nostr_gossip::NostrGossip;
 use tokio::sync::Mutex;
@@ -78,6 +78,12 @@ impl SharedState {
                 ErrorKind::Invalid,
                 "Invalid event ID",
             ));
+        }
+
+        // NIP-59: a gift wrap is signed by a throwaway key, so its signature proves nothing;
+        // authorship rides the seal inside, which readers verify. The ID check above still binds.
+        if event.kind == Kind::GiftWrap {
+            return Ok(());
         }
 
         let mut cache = self.verification_cache.lock().await;
