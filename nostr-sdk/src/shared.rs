@@ -2,7 +2,7 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use lru::LruCache;
-use nostr::error::Error;
+use nostr::error::{Error, ErrorKind};
 use nostr::event::{Event, EventId};
 use nostr_database::NostrDatabase;
 use nostr_gossip::NostrGossip;
@@ -71,6 +71,15 @@ impl SharedState {
     ///
     /// This is important since event signature verification is a heavy job!
     pub(crate) async fn verify_and_cache(&self, event: &Event) -> Result<(), Error> {
+        // The ID is sent by the relay: recompute it before trusting the cache,
+        // so a cache hit only skips the signature check of identical event data.
+        if !event.verify_id() {
+            return Err(Error::with_static_message(
+                ErrorKind::Invalid,
+                "Invalid event ID",
+            ));
+        }
+
         let mut cache = self.verification_cache.lock().await;
 
         // Full IDs avoid treating a hash collision as proof of event verification.

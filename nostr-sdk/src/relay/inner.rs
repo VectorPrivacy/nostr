@@ -2011,6 +2011,65 @@ mod tests {
         assert!(result.is_err());
     }
 
+    fn forge_with_id_of(valid_event: &Event) -> Event {
+        let mut forged_event = valid_event.clone();
+        forged_event.pubkey = Keys::generate().public_key();
+        forged_event.content = String::from("forged");
+        assert!(forged_event.verify().is_err());
+        forged_event
+    }
+
+    #[tokio::test]
+    async fn test_forged_event_with_cached_id_is_rejected_by_verification_cache() {
+        let relay = Relay::new(RelayUrl::parse("wss://relay.example.com").unwrap());
+        let valid_event = EventBuilder::new(Kind::TextNote, "valid")
+            .finalize(&Keys::generate())
+            .unwrap();
+        relay
+            .inner
+            .state
+            .verify_and_cache(&valid_event)
+            .await
+            .unwrap();
+
+        let forged_event = forge_with_id_of(&valid_event);
+        assert!(
+            relay
+                .inner
+                .state
+                .verify_and_cache(&forged_event)
+                .await
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_forged_event_with_cached_and_saved_id_is_rejected() {
+        let relay = Relay::new(RelayUrl::parse("wss://relay.example.com").unwrap());
+        let valid_event = EventBuilder::new(Kind::TextNote, "valid")
+            .finalize(&Keys::generate())
+            .unwrap();
+        let subscription_id = SubscriptionId::new("test");
+
+        // The relay first sends a valid event, which is verified, cached and saved...
+        assert!(
+            relay
+                .inner
+                .handle_event_msg(subscription_id.clone(), valid_event.clone())
+                .await
+                .unwrap()
+                .is_some()
+        );
+
+        // ...then a forged one reusing its ID, with another author and content.
+        let forged_event = forge_with_id_of(&valid_event);
+        let result = relay
+            .inner
+            .handle_event_msg(subscription_id, forged_event)
+            .await;
+        assert!(result.is_err());
+    }
+
     #[tokio::test]
     async fn test_subscription_verification_accepts_event_matching_any_filter() {
         let keys = Keys::generate();
