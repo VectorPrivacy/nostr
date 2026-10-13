@@ -24,3 +24,4 @@ mod stream;
 #[cfg(test)]
 mod test_utils;
 pub mod transport;
+mod verification_cache;

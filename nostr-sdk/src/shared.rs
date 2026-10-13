@@ -1,28 +1,22 @@
-use std::num::NonZeroUsize;
 use std::sync::Arc;
 
-use lru::LruCache;
 use nostr::error::{Error, ErrorKind};
-use nostr::event::{Event, EventId, Kind};
+use nostr::event::{Event, Kind};
 use nostr_database::NostrDatabase;
 use nostr_gossip::NostrGossip;
-use tokio::sync::Mutex;
 
 use crate::authenticator::Authenticator;
 use crate::monitor::Monitor;
 use crate::policy::AdmitPolicy;
 use crate::transport::websocket::WebSocketTransport;
-
-// LruCache pre-allocate, so keep this at a reasonable value.
-// A good value may be <= 128k.
-const MAX_VERIFICATION_CACHE_SIZE: usize = 128_000;
+use crate::verification_cache::VerificationCache;
 
 #[derive(Debug, Clone)]
 pub(crate) struct SharedState {
     pub(crate) database: Arc<dyn NostrDatabase>,
     pub(crate) transport: Arc<dyn WebSocketTransport>,
     pub(crate) gossip: Option<Arc<dyn NostrGossip>>,
-    verification_cache: Arc<Mutex<LruCache<EventId, ()>>>,
+    verification_cache: VerificationCache,
     pub(crate) admit_policy: Option<Arc<dyn AdmitPolicy>>,
     pub(crate) authenticator: Option<Arc<dyn Authenticator>>,
     pub(crate) monitor: Option<Monitor>,
@@ -37,15 +31,11 @@ impl SharedState {
         authenticator: Option<Arc<dyn Authenticator>>,
         monitor: Option<Monitor>,
     ) -> Self {
-        let max_verification_cache_size: NonZeroUsize =
-            NonZeroUsize::new(MAX_VERIFICATION_CACHE_SIZE)
-                .expect("MAX_VERIFICATION_CACHE_SIZE must be greater than 0");
-
         Self {
             database,
             transport,
             gossip,
-            verification_cache: Arc::new(Mutex::new(LruCache::new(max_verification_cache_size))),
+            verification_cache: VerificationCache::shared(),
             admit_policy,
             authenticator,
             monitor,
@@ -86,19 +76,13 @@ impl SharedState {
             return Ok(());
         }
 
-        let mut cache = self.verification_cache.lock().await;
-
         // Full IDs avoid treating a hash collision as proof of event verification.
-        if cache.contains(&event.id) {
-            return Ok(());
+        if !self.verification_cache.verify_signature(event) {
+            return Err(Error::with_static_message(
+                ErrorKind::Invalid,
+                "Invalid signature",
+            ));
         }
-
-        // We now verify the event
-        // If the event verification fails, the cache is not populated
-        event.verify()?;
-
-        // Event is verified, so we can cache it.
-        cache.put(event.id, ());
 
         Ok(())
     }
