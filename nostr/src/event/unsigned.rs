@@ -153,6 +153,22 @@ impl UnsignedEvent {
     where
         C: Verification,
     {
+        let event: Event = self.with_signature(sig)?;
+
+        // Verify event signature
+        if !event.verify_signature_with_ctx(secp) {
+            return Err(Error::with_static_message(
+                ErrorKind::Invalid,
+                "invalid signature",
+            ));
+        }
+
+        Ok(event)
+    }
+
+    /// Attach a signature this process just made over the event's ID, checking the ID but not
+    /// re-verifying the signature.
+    pub(crate) fn with_signature(self, sig: Signature) -> Result<Event, Error> {
         let (id, verify_id): (EventId, bool) = match self.id {
             // Mark the ID as verified if it's already set, as may be wrong.
             Some(id) => (id, true),
@@ -173,14 +189,6 @@ impl UnsignedEvent {
         // Verify the event ID
         if verify_id && !event.verify_id() {
             return Err(invalid_event_id());
-        }
-
-        // Verify event signature
-        if !event.verify_signature_with_ctx(secp) {
-            return Err(Error::with_static_message(
-                ErrorKind::Invalid,
-                "invalid signature",
-            ));
         }
 
         Ok(event)

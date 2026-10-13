@@ -254,9 +254,18 @@ impl SignEvent for Keys {
     type Error = Error;
 
     fn sign_event(&self, unsigned: UnsignedEvent) -> Result<Event, Self::Error> {
+        // The verify this replaces also refused an event built for another key.
+        if unsigned.pubkey != self.public_key {
+            return Err(Error::with_static_message(
+                crate::error::ErrorKind::Invalid,
+                "event public key does not match the signing key",
+            ));
+        }
         let id: EventId = unsigned.id.unwrap_or_else(|| unsigned.compute_id());
         let sig: Signature = self.sign_schnorr(id.as_bytes());
-        unsigned.add_signature(sig)
+        // No post-sign verify: it guards against induced hardware faults, a hardware-wallet
+        // threat, and costs more than the signing itself.
+        unsigned.with_signature(sig)
     }
 }
 
@@ -368,6 +377,25 @@ mod tests {
     const SECRET_KEY_BECH32: &str =
         "nsec1j4c6269y9w0q2er2xjw8sv2ehyrtfxq3jwgdlxj6qfn8z4gjsq5qfvfk99";
     const SECRET_KEY_HEX: &str = "6b911fd37cdf5c81d4c0adb1ab7fa822ed253ab0ad9aa18d77257c88b29b718e";
+
+    #[test]
+    #[cfg(feature = "os-rng")]
+    fn a_signed_event_verifies_and_another_keys_event_is_refused() {
+        use crate::event::{EventBuilder, FinalizeUnsignedEvent, Kind};
+
+        let keys = Keys::generate();
+        let event = keys
+            .sign_event(
+                EventBuilder::new(Kind::TextNote, "hi").finalize_unsigned(keys.public_key()),
+            )
+            .unwrap();
+        assert!(event.verify().is_ok());
+
+        let other = Keys::generate().public_key();
+        let refused =
+            keys.sign_event(EventBuilder::new(Kind::TextNote, "hi").finalize_unsigned(other));
+        assert_eq!(refused.unwrap_err().kind(), ErrorKind::Invalid);
+    }
 
     #[test]
     fn parse_keys() -> Result<(), Error> {
