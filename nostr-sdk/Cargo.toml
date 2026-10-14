@@ -30,7 +30,6 @@ async-utility.workspace = true
 async-wsocket = { version = "0.17", features = ["socks"] }
 faster-hex = { workspace = true, features = ["std"] }
 futures = "0.3"
-lru.workspace = true
 negentropy = { workspace = true, features = ["std"] }
 nostr = { workspace = true, features = ["std", "rand", "os-rng"] }
 nostr-database.workspace = true

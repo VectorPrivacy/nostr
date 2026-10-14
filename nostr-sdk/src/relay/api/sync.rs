@@ -617,7 +617,7 @@ impl<'relay> IntoFuture for SyncEvents<'relay> {
             sync(
                 self.relay,
                 &self.filter,
-                items.clone(),
+                items,
                 &self.opts,
                 &mut output,
             )

@@ -1,28 +1,39 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 use std::future::Future;
-use std::num::NonZeroUsize;
 use std::pin::Pin;
 
-use lru::LruCache;
 use nostr::prelude::*;
 use nostr_database::error::Error;
 use nostr_database::prelude::*;
 use tokio::sync::RwLock;
 
-const MAX_EVENTS: NonZeroUsize = NonZeroUsize::new(35_000).unwrap();
+const MAX_EVENTS: usize = 35_000;
 
-/// Memory Database (RAM)
-#[derive(Debug)]
-pub(crate) struct MemoryEventsTracker {
-    tracker: RwLock<LruCache<EventId, ()>>,
+/// Two generations of seen IDs: when the newer fills, the older is dropped whole. Grows with
+/// use, where a preallocated LRU of the full size cost ~1 MB per client before any event.
+#[derive(Debug, Default)]
+struct Seen {
+    current: HashSet<EventId>,
+    previous: HashSet<EventId>,
 }
 
-impl Default for MemoryEventsTracker {
-    fn default() -> Self {
-        Self {
-            tracker: RwLock::new(LruCache::new(MAX_EVENTS)),
+impl Seen {
+    fn insert(&mut self, id: EventId) {
+        self.current.insert(id);
+        if self.current.len() >= MAX_EVENTS / 2 {
+            self.previous = std::mem::take(&mut self.current);
         }
     }
+
+    fn contains(&self, id: &EventId) -> bool {
+        self.current.contains(id) || self.previous.contains(id)
+    }
+}
+
+/// Memory Database (RAM)
+#[derive(Debug, Default)]
+pub(crate) struct MemoryEventsTracker {
+    tracker: RwLock<Seen>,
 }
 
 impl NostrDatabase for MemoryEventsTracker {
@@ -47,7 +58,7 @@ impl NostrDatabase for MemoryEventsTracker {
         Box::pin(async move {
             // Mark it as seen
             let mut seen_event_ids = self.tracker.write().await;
-            seen_event_ids.put(event.id, ());
+            seen_event_ids.insert(event.id);
 
             Ok(SaveEventStatus::Success)
         })
@@ -109,9 +120,37 @@ impl NostrDatabase for MemoryEventsTracker {
 
     fn wipe(&self) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send + '_>> {
         Box::pin(async move {
-            let mut seen_event_ids = self.tracker.write().await;
-            seen_event_ids.clear();
+            *self.tracker.write().await = Seen::default();
             Ok(())
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn id(n: usize) -> EventId {
+        let mut b = [0u8; 32];
+        b[..8].copy_from_slice(&(n as u64).to_le_bytes());
+        EventId::from_byte_array(b)
+    }
+
+    #[test]
+    fn it_remembers_the_newest_and_drops_the_oldest() {
+        let mut seen = Seen::default();
+        for n in 0..MAX_EVENTS + MAX_EVENTS / 4 {
+            seen.insert(id(n));
+        }
+        assert!(seen.current.len() + seen.previous.len() <= MAX_EVENTS);
+        assert!(!seen.contains(&id(0)));
+        assert!(seen.contains(&id(MAX_EVENTS)), "the previous generation still answers");
+        assert!(seen.contains(&id(MAX_EVENTS + MAX_EVENTS / 4 - 1)));
+    }
+
+    #[test]
+    fn nothing_is_allocated_before_an_event() {
+        let seen = Seen::default();
+        assert_eq!(seen.current.capacity() + seen.previous.capacity(), 0);
     }
 }

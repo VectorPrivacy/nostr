@@ -1,19 +1,44 @@
 //! Verification cache
 
+use std::collections::HashSet;
 use std::fmt;
 use std::num::NonZeroUsize;
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard, PoisonError};
 
-use lru::LruCache;
 use nostr::event::{Event, EventId};
 
-const DEFAULT_CAPACITY: NonZeroUsize = NonZeroUsize::new(128_000).unwrap();
+/// The same event reaches every relay within seconds, so a short window keeps the hits.
+const DEFAULT_CAPACITY: NonZeroUsize = NonZeroUsize::new(32_000).unwrap();
+
+/// Two generations of IDs: when the newer fills, the older is dropped whole. A table, not a
+/// linked list, so an entry costs no allocation of its own.
+#[derive(Default)]
+struct Generations {
+    current: HashSet<EventId>,
+    previous: HashSet<EventId>,
+}
+
+impl Generations {
+    fn len(&self) -> usize {
+        self.current.len() + self.previous.len()
+    }
+
+    #[cfg(test)]
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    #[cfg(test)]
+    fn contains(&self, id: &EventId) -> bool {
+        self.current.contains(id) || self.previous.contains(id)
+    }
+}
 
 /// IDs of events whose signature checked out. Clones share one cache, which grows with use
 /// up to its capacity.
 #[derive(Clone)]
 pub(crate) struct VerificationCache {
-    ids: Arc<Mutex<LruCache<EventId, ()>>>,
+    ids: Arc<Mutex<Generations>>,
     capacity: NonZeroUsize,
 }
 
@@ -42,7 +67,7 @@ impl VerificationCache {
 
     pub(crate) fn new(capacity: NonZeroUsize) -> Self {
         Self {
-            ids: Arc::new(Mutex::new(LruCache::unbounded())),
+            ids: Arc::new(Mutex::new(Generations::default())),
             capacity,
         }
     }
@@ -57,7 +82,7 @@ impl VerificationCache {
         self.lock().is_empty()
     }
 
-    fn lock(&self) -> MutexGuard<'_, LruCache<EventId, ()>> {
+    fn lock(&self) -> MutexGuard<'_, Generations> {
         self.ids.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
@@ -66,8 +91,15 @@ impl VerificationCache {
     /// The caller must have recomputed the event's ID: a hit vouches for the event data that
     /// hashes to that ID, nothing else.
     pub(crate) fn verify_signature(&self, event: &Event) -> bool {
-        if self.lock().promote(&event.id) {
-            return true;
+        {
+            let mut ids = self.lock();
+            if ids.current.contains(&event.id) {
+                return true;
+            }
+            if ids.previous.contains(&event.id) {
+                self.remember(&mut ids, event.id);
+                return true;
+            }
         }
 
         // Checked outside the lock, which every client sharing the cache contends on.
@@ -76,11 +108,15 @@ impl VerificationCache {
         }
 
         let mut ids = self.lock();
-        ids.put(event.id, ());
-        if ids.len() > self.capacity.get() {
-            ids.pop_lru();
-        }
+        self.remember(&mut ids, event.id);
         true
+    }
+
+    fn remember(&self, ids: &mut Generations, id: EventId) {
+        ids.current.insert(id);
+        if ids.current.len() >= self.capacity.get().div_ceil(2) {
+            ids.previous = std::mem::take(&mut ids.current);
+        }
     }
 }
 
@@ -124,15 +160,48 @@ mod tests {
     }
 
     #[test]
-    fn it_holds_no_more_than_its_capacity_dropping_the_least_recent() {
-        let cache = VerificationCache::new(NonZeroUsize::new(2).unwrap());
-        let (a, b, c) = (note("a"), note("b"), note("c"));
+    fn it_holds_no_more_than_its_capacity_dropping_the_oldest() {
+        let cache = VerificationCache::new(NonZeroUsize::new(4).unwrap());
+        let events: Vec<Event> = (0..7).map(|i| note(&i.to_string())).collect();
+        for e in &events[..5] {
+            assert!(cache.verify_signature(e));
+        }
+        assert!(cache.len() <= 4);
+        let ids = cache.lock();
+        assert!(!ids.contains(&events[0].id) && !ids.contains(&events[1].id));
+        assert!(ids.contains(&events[2].id) && ids.contains(&events[3].id) && ids.contains(&events[4].id));
+    }
+
+    #[test]
+    fn a_hit_in_the_older_generation_survives_the_next_turnover() {
+        let cache = VerificationCache::new(NonZeroUsize::new(4).unwrap());
+        let events: Vec<Event> = (0..5).map(|i| note(&i.to_string())).collect();
+        assert!(cache.verify_signature(&events[0]));
+        assert!(cache.verify_signature(&events[1]));
+        // 0 and 1 are now the older generation; seeing 0 again carries it forward.
+        assert!(cache.verify_signature(&events[0]));
+        assert!(cache.verify_signature(&events[2]));
+        assert!(cache.verify_signature(&events[3]));
+        let ids = cache.lock();
+        assert!(ids.contains(&events[0].id) && !ids.contains(&events[1].id));
+    }
+
+    #[test]
+    fn the_older_generation_still_answers() {
+        let cache = VerificationCache::new(NonZeroUsize::new(4).unwrap());
+        let (a, b) = (note("a"), note("b"));
         assert!(cache.verify_signature(&a));
         assert!(cache.verify_signature(&b));
-        assert!(cache.verify_signature(&a));
-        assert!(cache.verify_signature(&c));
-        assert_eq!(cache.len(), 2);
-        let ids = cache.lock();
-        assert!(ids.contains(&a.id) && ids.contains(&c.id) && !ids.contains(&b.id));
+        assert!(cache.lock().current.is_empty(), "a and b moved to the older generation");
+        assert!(cache.verify_signature(&with_bad_signature(b)));
+    }
+
+    #[test]
+    fn a_cached_id_answers_without_rechecking() {
+        let cache = VerificationCache::default();
+        let event = note("once");
+        assert!(cache.verify_signature(&event));
+        // Same id, broken signature: only a hit can answer true.
+        assert!(cache.verify_signature(&with_bad_signature(event)));
     }
 }
