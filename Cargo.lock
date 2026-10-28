@@ -1932,8 +1932,9 @@ dependencies = [
 
 [[package]]
 name = "nostr-parse"
-version = "0.1.0"
-source = "git+https://github.com/VectorPrivacy/nostr-parse?tag=v0.1.0#7477935afdd85fdb2f5d01935134b933d221acda"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ed9a6ed965ba07815a4cf81ad651cfd1875a3b0e776b298831dc3cf061d0ea4f"
 
 [[package]]
 name = "nostr-sdk"

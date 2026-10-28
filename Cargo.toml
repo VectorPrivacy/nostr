@@ -59,7 +59,7 @@ nostr-gossip-sqlite = { version = "0.45", path = "./gossip/nostr-gossip-sqlite",
 nostr-gossip-test-suite = { path = "./gossip/nostr-gossip-test-suite" }
 nostr-lmdb = { version = "0.45", path = "./database/nostr-lmdb", default-features = false }
 nostr-ndb = { version = "0.45", path = "./database/nostr-ndb", default-features = false }
-nostr-parse = { git = "https://github.com/VectorPrivacy/nostr-parse", tag = "v0.1.0" }
+nostr-parse = "0.3"
 nostr-sdk = { version = "0.45", path = "./nostr-sdk", default-features = false }
 opaquerr = "0.2"
 rand = { version = "0.10", default-features = false }
