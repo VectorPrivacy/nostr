@@ -34,6 +34,7 @@ negentropy = { workspace = true, features = ["std"] }
 nostr = { workspace = true, features = ["std", "rand", "os-rng"] }
 nostr-database.workspace = true
 nostr-gossip.workspace = true
+nostr-parse.workspace = true
 nostr-memory = { workspace = true, optional = true }
 opaquerr = { workspace = true, features = ["alloc"] }
 rand = { workspace = true, features = ["std", "sys_rng"] }

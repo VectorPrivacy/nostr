@@ -27,6 +27,15 @@
 
 -->
 
+## Unreleased
+
+### Performance
+
+- Parse `EVENT` relay messages in their plain spelling straight into an `Event` with
+  `nostr-parse`, about twice as fast as the generic message codec and with fewer
+  allocations. Any other message, or an event an `Event` cannot hold, still goes through
+  `RelayMessage::from_json`, so behaviour is unchanged.
+
 ## v0.45.4 - 2026/09/19
 
 ### Fixed

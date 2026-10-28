@@ -19,6 +19,7 @@ mod api;
 mod builder;
 mod capabilities;
 mod constants;
+mod fast_event;
 mod inner;
 mod limits;
 mod notification;

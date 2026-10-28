@@ -1931,6 +1931,11 @@ dependencies = [
 ]
 
 [[package]]
+name = "nostr-parse"
+version = "0.1.0"
+source = "git+https://github.com/VectorPrivacy/nostr-parse?tag=v0.1.0#7477935afdd85fdb2f5d01935134b933d221acda"
+
+[[package]]
 name = "nostr-sdk"
 version = "0.45.4"
 dependencies = [
@@ -1951,6 +1956,7 @@ dependencies = [
  "nostr-lmdb",
  "nostr-memory",
  "nostr-ndb",
+ "nostr-parse",
  "opaquerr",
  "rand 0.10.1",
  "tokio",

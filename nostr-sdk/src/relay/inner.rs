@@ -1171,6 +1171,10 @@ impl InnerRelay {
             }
         }
 
+        if let Some((subscription_id, event)) = super::fast_event::parse_event_message(msg) {
+            return self.handle_event_msg(subscription_id, event).await;
+        }
+
         // Handle msg
         match RelayMessage::from_json(msg)? {
             RelayMessage::Event {
@@ -2459,6 +2463,121 @@ mod tests {
                 .and_then(|source| source.downcast_ref::<broadcast::error::RecvError>())
                 .is_some_and(|source| matches!(source, broadcast::error::RecvError::Closed))
         );
+    }
+
+    /// Cost per `EVENT` message with the fast path and with the message codec, for each workload
+    /// of a nostrJsonBench corpus (`NOSTR_CORPUS=<dir>`; at most 12,000 signed events, so every
+    /// ID stays in both caches): parsing alone, `handle_raw_relay_message` on new events, then on
+    /// the same events again as duplicates. The two alternate, five rounds each. Run optimised:
+    /// `cargo test --release -p nostr-sdk --lib bench_event_messages -- --ignored --nocapture`
+    #[tokio::test(flavor = "current_thread")]
+    #[ignore]
+    async fn bench_event_messages() {
+        use std::hint::black_box;
+        use std::time::Instant;
+
+        use crate::relay::fast_event;
+        use crate::verification_cache::VerificationCache;
+
+        let dir: String = std::env::var("NOSTR_CORPUS").expect("NOSTR_CORPUS");
+        println!(
+            "ns per message   parse: codec   fast   new: codec   fast   duplicate: codec   fast   id check"
+        );
+        for workload in [
+            "all",
+            "notes",
+            "reactions",
+            "dms",
+            "giftwraps",
+            "metadata",
+            "zaps",
+            "lists",
+        ] {
+            let text: String = std::fs::read_to_string(format!("{dir}/{workload}.ndjson")).unwrap();
+            let msgs: Vec<String> = text
+                .lines()
+                .filter(|l| !l.is_empty() && !l.contains(r#""sig":"""#))
+                .take(12_000)
+                .map(|l| format!(r#"["EVENT","bench",{l}]"#))
+                .collect();
+            let per = |t: Instant| t.elapsed().as_nanos() as f64 / msgs.len() as f64;
+
+            // [codec, fast][parse, new, duplicate]
+            let mut ns: [[Vec<f64>; 3]; 2] = Default::default();
+            let mut handled: [usize; 2] = [0; 2];
+            for round in 0..5 {
+                for k in 0..2 {
+                    let fast: bool = (round + k) % 2 == 1;
+                    let m: usize = usize::from(fast);
+                    fast_event::DISABLED.store(!fast, Ordering::Relaxed);
+
+                    let t = Instant::now();
+                    for msg in &msgs {
+                        if fast {
+                            black_box(fast_event::parse_event_message(msg).unwrap());
+                        } else {
+                            black_box(RelayMessage::from_json(msg).unwrap());
+                        }
+                    }
+                    ns[m][0].push(per(t));
+
+                    VerificationCache::shared().clear();
+                    let relay = Relay::new(RelayUrl::parse("wss://relay.example.com").unwrap());
+                    let mut ok: usize = 0;
+                    let t = Instant::now();
+                    for msg in &msgs {
+                        ok += usize::from(
+                            black_box(relay.inner.handle_raw_relay_message(msg).await).is_ok(),
+                        );
+                    }
+                    ns[m][1].push(per(t));
+                    handled[m] = ok;
+
+                    let t = Instant::now();
+                    for msg in &msgs {
+                        black_box(relay.inner.handle_raw_relay_message(msg).await.ok());
+                    }
+                    ns[m][2].push(per(t));
+                }
+            }
+            fast_event::DISABLED.store(false, Ordering::Relaxed);
+            assert_eq!(
+                handled[0], handled[1],
+                "{workload}: both paths accept the same events"
+            );
+
+            // What every message pays after parsing, new or duplicate: recomputing the ID.
+            let events: Vec<Event> = msgs
+                .iter()
+                .map(|m| fast_event::parse_event_message(m).unwrap().1)
+                .collect();
+            let mut id_ns: Vec<f64> = (0..5)
+                .map(|_| {
+                    let t = Instant::now();
+                    for e in &events {
+                        black_box(e.verify_id());
+                    }
+                    per(t)
+                })
+                .collect();
+
+            let median = |v: &mut Vec<f64>| {
+                v.sort_by(f64::total_cmp);
+                v[v.len() / 2]
+            };
+            let [codec, fast] = &mut ns;
+            println!(
+                "{workload:<10} {:>6} msgs {:>11.0} {:>6.0} {:>12.0} {:>6.0} {:>18.0} {:>6.0} {:>10.0}",
+                msgs.len(),
+                median(&mut codec[0]),
+                median(&mut fast[0]),
+                median(&mut codec[1]),
+                median(&mut fast[1]),
+                median(&mut codec[2]),
+                median(&mut fast[2]),
+                median(&mut id_ns),
+            );
+        }
     }
 }
 

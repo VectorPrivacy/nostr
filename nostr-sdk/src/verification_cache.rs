@@ -82,6 +82,11 @@ impl VerificationCache {
         self.lock().is_empty()
     }
 
+    #[cfg(test)]
+    pub(crate) fn clear(&self) {
+        *self.lock() = Generations::default();
+    }
+
     fn lock(&self) -> MutexGuard<'_, Generations> {
         self.ids.lock().unwrap_or_else(PoisonError::into_inner)
     }
