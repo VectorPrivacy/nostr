@@ -23,6 +23,7 @@ std = [
     "bech32/std",
     "bip39?/std",
     "bitcoin_hashes/std",
+    "dep:nostr-parse",
     "cbc?/std",
     "chacha20?/std",
     "chacha20poly1305?/std",
@@ -83,6 +84,8 @@ scrypt = { version = "0.12", default-features = false, optional = true }
 secp256k1 = { version = "0.30", default-features = false }
 serde = { workspace = true, default-features = false, features = ["derive"] }
 serde_json.workspace = true
+# Event ids hashed from the NIP-01 serialization as it is written, with std.
+nostr-parse = { workspace = true, optional = true }
 unicode-normalization = { version = "0.1", default-features = false, optional = true }
 universal-time.workspace = true
 url = { version = "2.5", default-features = false, features = ["serde"] }

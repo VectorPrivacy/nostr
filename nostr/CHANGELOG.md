@@ -27,6 +27,14 @@
 
 -->
 
+## Unreleased
+
+### Performance
+
+- Compute `EventId`s by streaming the NIP-01 serialization into SHA-256 with `nostr-parse`
+  (with `std`) instead of building it with `serde_json` first: the same bytes, 1.4-1.7x
+  faster, and no allocation.
+
 ## v0.45.5 - 2026/09/11
 
 ### Fixed 

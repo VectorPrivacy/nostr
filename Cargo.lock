@@ -1759,6 +1759,7 @@ dependencies = [
  "chacha20",
  "chacha20poly1305",
  "faster-hex",
+ "nostr-parse",
  "opaquerr",
  "rand 0.10.1",
  "reqwest",
@@ -1932,9 +1933,9 @@ dependencies = [
 
 [[package]]
 name = "nostr-parse"
-version = "0.3.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ed9a6ed965ba07815a4cf81ad651cfd1875a3b0e776b298831dc3cf061d0ea4f"
+checksum = "a68b8ffe088159244b40038395d4e924a1c67a0a4950992ef8ee58e10803d50b"
 
 [[package]]
 name = "nostr-sdk"

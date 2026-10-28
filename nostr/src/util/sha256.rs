@@ -28,10 +28,19 @@ impl Sha256Hash {
         Ok(Self::from_byte_array(bytes))
     }
 
+    // With std, event ids stream through `from_engine` instead.
+    #[cfg(any(not(feature = "std"), feature = "nip98", test))]
     #[inline]
     pub(crate) fn hash(bytes: &[u8]) -> Self {
         let hash: sha256::Hash = sha256::Hash::hash(bytes);
         Self::from_byte_array(hash.to_byte_array())
+    }
+
+    /// The digest of everything `engine` has taken in.
+    #[cfg(feature = "std")]
+    #[inline]
+    pub(crate) fn from_engine(engine: sha256::HashEngine) -> Self {
+        Self::from_byte_array(sha256::Hash::from_engine(engine).to_byte_array())
     }
 
     /// Get as bytes

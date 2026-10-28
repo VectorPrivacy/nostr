@@ -5,6 +5,7 @@
 //! Event ID
 
 use alloc::string::String;
+#[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 use core::fmt;
 use core::str::{self, FromStr};
@@ -57,11 +58,32 @@ impl EventId {
         tags: &Tags,
         content: &str,
     ) -> Self {
-        let serialized: Vec<u8> =
-            serde_json::to_vec(&(0u8, public_key, created_at, kind, tags, content))
-                .expect("serializing valid Nostr event fields must not fail");
-        let hash: Sha256Hash = Sha256Hash::hash(&serialized);
-        Self(hash)
+        // nostr-parse writes the bytes serde_json would for the tuple straight into the
+        // hasher: no buffer, and content with nothing to escape passes as one slice.
+        #[cfg(feature = "std")]
+        {
+            use bitcoin_hashes::HashEngine;
+            let mut engine = bitcoin_hashes::sha256::HashEngine::default();
+            let tags = tags
+                .iter()
+                .map(|tag| tag.as_slice().iter().map(String::as_str));
+            nostr_parse::write_preimage(
+                public_key.as_bytes(),
+                created_at.as_secs(),
+                kind.as_u16(),
+                tags,
+                content,
+                |bytes| engine.input(bytes),
+            );
+            Self(Sha256Hash::from_engine(engine))
+        }
+        #[cfg(not(feature = "std"))]
+        {
+            let serialized: Vec<u8> =
+                serde_json::to_vec(&(0u8, public_key, created_at, kind, tags, content))
+                    .expect("serializing valid Nostr event fields must not fail");
+            Self(Sha256Hash::hash(&serialized))
+        }
     }
 
     /// Construct from a 32-byte array
@@ -220,6 +242,42 @@ impl<'de> Deserialize<'de> for EventId {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The streamed id is the SHA-256 of exactly what serde_json writes for the NIP-01 tuple.
+    #[test]
+    fn compute_matches_the_serde_json_serialization() {
+        let pk =
+            PublicKey::from_hex("379e863e8357163b5bce5d2688dc4f1dcc2d505222fb8d74db600f30535dfdfe")
+                .unwrap();
+        let (ts, kind) = (Timestamp::from(1_761_600_000), Kind::from(30023u16));
+        let controls: String = (0u8..0x20).map(char::from).collect();
+        let odd = format!(
+            "quote \" backslash \\ slash / del {} é 日本 😀",
+            char::from(0x7f)
+        );
+        let tags = Tags::from_list(vec![
+            Tag::parse(["p", pk.to_hex().as_str()]).unwrap(),
+            Tag::parse(["subject", odd.as_str(), controls.as_str()]).unwrap(),
+        ]);
+        for content in [
+            "",
+            "gm",
+            odd.as_str(),
+            controls.as_str(),
+            &"long ".repeat(500),
+        ] {
+            for tags in [&Tags::new(), &tags] {
+                let serialized =
+                    serde_json::to_vec(&(0u8, &pk, &ts, &kind, tags, content)).unwrap();
+                let want = EventId(Sha256Hash::hash(&serialized));
+                assert_eq!(
+                    EventId::compute(&pk, &ts, &kind, tags, content),
+                    want,
+                    "{content:?}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn test_check_pow() {
